@@ -38,6 +38,7 @@ export async function handleValidateCommand(options: CliOptions): Promise<number
                 JSON.stringify(
                     {
                         violations: result.violations,
+                        acceptedExceptions: result.acceptedExceptions,
                         totalPackages: result.totalPackages,
                         duration: result.duration,
                     },
@@ -46,6 +47,22 @@ export async function handleValidateCommand(options: CliOptions): Promise<number
                 )
             );
         } else {
+            if (result.acceptedExceptions.length > 0) {
+                logInfo(
+                    `📌 Accepted ${result.acceptedExceptions.length} dependency exception(s):\n`
+                );
+                for (const usage of result.acceptedExceptions) {
+                    for (const edge of usage.acceptedEdges) {
+                        logPlain(
+                            `   ${edge.fromPackage} (${edge.fromLayer}) → ${edge.toPackage} (${edge.toLayer})`
+                        );
+                    }
+                    logGray(
+                        `   Owner: ${usage.exception.owner} | Reason: ${usage.exception.reason}\n`
+                    );
+                }
+            }
+
             if (result.violations.length === 0) {
                 logSuccess('✅ All packages comply with layer rules!');
             } else {

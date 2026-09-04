@@ -1,0 +1,7 @@
+{
+    "type": "minor",
+    "comment": "Support empty membership allowlists and explicit dependency exceptions",
+    "packageName": "stratifyjs",
+    "email": "walterb@microsoft.com",
+    "dependentChangeType": "none"
+}

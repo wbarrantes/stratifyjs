@@ -1,0 +1,27 @@
+{
+    "layers": {
+        "ui": {
+            "allowedDependencies": ["core"]
+        },
+        "core": {
+            "allowedDependencies": ["infra"]
+        },
+        "infra": {
+            "allowedDependencies": []
+        }
+    },
+    "dependencyExceptions": [
+        {
+            "fromPackage": "@sample/bad-pkg",
+            "toPackage": "@sample/infra",
+            "owner": "platform",
+            "reason": "Temporary migration bridge"
+        }
+    ],
+    "enforcement": {
+        "mode": "error"
+    },
+    "workspaces": {
+        "patterns": ["packages/*"]
+    }
+}

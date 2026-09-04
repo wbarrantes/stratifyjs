@@ -90,5 +90,31 @@ describe('handleValidateCommand', () => {
         });
 
         expect(jsonOutput).toBeDefined();
+        expect(JSON.parse(jsonOutput![0] as string)).toHaveProperty('acceptedExceptions');
+    });
+
+    it('reports accepted exceptions separately in console and JSON output', async () => {
+        const config = resolve(CONFIGS_DIR, 'valid-config-with-exception.json');
+        const logSpy = jest.spyOn(console, 'log');
+
+        expect(await handleValidateCommand(buildCliOptions({ config, format: 'console' }))).toBe(0);
+        expect(logSpy.mock.calls.flat().join('\n')).toContain('Accepted 1 dependency exception');
+
+        logSpy.mockClear();
+        await handleValidateCommand(buildCliOptions({ config, format: 'json' }));
+        const output = logSpy.mock.calls
+            .map(call => call[0] as string)
+            .find(message => {
+                try {
+                    return JSON.parse(message).acceptedExceptions !== undefined;
+                } catch {
+                    return false;
+                }
+            });
+
+        expect(JSON.parse(output!)).toMatchObject({
+            violations: [],
+            acceptedExceptions: [{ acceptedEdges: [{ fromPackage: '@sample/bad-pkg' }] }],
+        });
     });
 });

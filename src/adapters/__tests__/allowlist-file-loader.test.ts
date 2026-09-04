@@ -20,11 +20,11 @@ describe('validateAllowlistContent', () => {
         }
     });
 
-    it('should reject an empty array', () => {
+    it('should accept an empty array as a restrict-all allowlist', () => {
         const result = validateAllowlistContent([], 'test.json');
-        expect(result.success).toBe(false);
-        if (!result.success) {
-            expect(result.error.message).toContain('at least one package name');
+        expect(result.success).toBe(true);
+        if (result.success) {
+            expect(result.value).toEqual(new Set());
         }
     });
 

@@ -44,6 +44,11 @@ export function parsePackageJson(
             dependencyTypes,
             pkg as Record<string, unknown>
         ),
+        runtimeDependencies: extractInternalDependencies(
+            protocols,
+            ['dependencies'],
+            pkg as Record<string, unknown>
+        ),
         path: relativePath,
     });
 }

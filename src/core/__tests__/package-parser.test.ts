@@ -32,6 +32,7 @@ describe('parsePackageJson', () => {
             expect(result.value.dependencies).toContain('@my/core');
             expect(result.value.dependencies).not.toContain('@my/test-utils');
             expect(result.value.dependencies).not.toContain('react');
+            expect(result.value.runtimeDependencies).toEqual(['@my/core']);
         }
     });
 
@@ -59,6 +60,7 @@ describe('parsePackageJson', () => {
             expect(result.value.dependencies).toContain('@my/core');
             expect(result.value.dependencies).toContain('@my/test-utils');
             expect(result.value.dependencies).not.toContain('react');
+            expect(result.value.runtimeDependencies).toEqual(['@my/core']);
         }
     });
 

@@ -57,7 +57,7 @@ export async function loadAllowedPackages(
 }
 
 /**
- * Validate that parsed JSON is a non-empty array of strings.
+ * Validate that parsed JSON is an array of strings.
  *
  * @param parsed - The parsed JSON content to validate
  * @param filePath - The path to the file (for error messages)
@@ -71,13 +71,6 @@ export function validateAllowlistContent(
         return err({
             type: 'config-validation-error',
             message: `Allowed-packages file "${filePath}" must contain a JSON array`,
-        });
-    }
-
-    if (parsed.length === 0) {
-        return err({
-            type: 'config-validation-error',
-            message: `Allowed-packages file "${filePath}" must contain at least one package name`,
         });
     }
 

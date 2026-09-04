@@ -136,6 +136,9 @@ try {
     for (const v of result.violations) {
         console.log(v.detailedMessage);
     }
+    for (const usage of result.acceptedExceptions) {
+        console.log(usage.exception.owner, usage.acceptedEdges);
+    }
 } catch (error) {
     if (error instanceof StratifyError) {
         console.error(error.type, error.message);
@@ -154,11 +157,12 @@ try {
 
 ### Result
 
-| Field           | Type          | Description                        |
-| --------------- | ------------- | ---------------------------------- |
-| `violations`    | `Violation[]` | All violations found               |
-| `totalPackages` | `number`      | Number of discovered packages      |
-| `duration`      | `number`      | Elapsed time in milliseconds       |
+| Field                | Type                            | Description                                                   |
+| -------------------- | ------------------------------- | ------------------------------------------------------------- |
+| `violations`         | `Violation[]`                   | All violations found                                          |
+| `acceptedExceptions` | `AcceptedDependencyException[]` | Configured exceptions and the real dependency edges they used |
+| `totalPackages`      | `number`                        | Number of discovered packages                                 |
+| `duration`           | `number`                        | Elapsed time in milliseconds                                  |
 
 Each `Violation` has a short `message` for programmatic use and a rich `detailedMessage` with actionable context for human-readable output.
 
@@ -200,11 +204,12 @@ try {
 
 ## Config File Format
 
-The config file (default: `stratify.config.json`) is a JSON object with three sections:
+The config file (default: `stratify.config.json`) is a JSON object with four sections:
 
 ```json
 {
   "layers": { ... },
+  "dependencyExceptions": [ ... ],
   "enforcement": { ... },
   "workspaces": { ... }
 }
@@ -237,7 +242,7 @@ A map of layer names to their definitions. Each layer must specify which other l
 | --------------------- | ---------- | -------- | -------------------------------------------------------------------- |
 | `description`         | `string`   | No       | Human-readable description of the layer's purpose                    |
 | `allowedDependencies` | `string[]` | **Yes**  | Layer names this layer may depend on. Use `"*"` to allow all layers. |
-| `allowedPackages`     | `string[]` | No       | Inline list of package names allowed to declare this layer. Mutually exclusive with `allowedPackagesFile`. |
+| `allowedPackages`     | `string[]` | No       | Inline list of package names allowed to declare this layer. An empty array prevents every package from declaring it. Mutually exclusive with `allowedPackagesFile`. |
 | `allowedPackagesFile` | `string`   | No       | Path to a JSON file (relative to workspace root) containing an array of allowed package names. Mutually exclusive with `allowedPackages`. |
 
 ### `enforcement` (optional)
@@ -367,7 +372,50 @@ Where `legacy-packages.json` is a sorted JSON array checked into source control:
 ]
 ```
 
-The two fields are mutually exclusive — specifying both on the same layer is a config validation error. Layers without either field remain unrestricted.
+The two fields are mutually exclusive — specifying both on the same layer is a config validation error. An empty inline array or empty file is a valid restrict-all allowlist. Layers without either field remain unrestricted.
+
+### Dependency Exceptions
+
+`dependencyExceptions` records narrow, owned acknowledgements for real runtime dependency edges that violate the layer rules. Exact package-to-package exceptions are preferred:
+
+```json
+{
+    "dependencyExceptions": [
+        {
+            "fromPackage": "@example/checkout",
+            "toPackage": "@example/legacy-payments",
+            "owner": "payments-platform",
+            "reason": "Temporary bridge while payment authorization is migrated"
+        }
+    ]
+}
+```
+
+A layer may consume one designated target capability when multiple packages require the same exception:
+
+```json
+{
+    "dependencyExceptions": [
+        {
+            "fromLayer": "features",
+            "toPackage": "@example/audit-client",
+            "owner": "architecture",
+            "reason": "Designated audit capability for feature packages"
+        }
+    ]
+}
+```
+
+Each entry must use exactly one supported scope:
+
+| Scope | Required fields | Meaning |
+| ----- | --------------- | ------- |
+| Exact edge | `fromPackage`, `toPackage`, `owner`, `reason` | Allows one package to depend on one package |
+| Designated capability | `fromLayer`, `toPackage`, `owner`, `reason` | Allows packages in one layer to depend on one package |
+
+Broad layer-to-layer exceptions are intentionally unsupported. `owner` and `reason` must be non-empty. Source layers and all referenced packages must exist, and each exception must match at least one discovered runtime dependency that would otherwise violate `allowedDependencies`. Duplicate, overlapping, stale, unnecessary, and otherwise unused exceptions are configuration errors.
+
+Successful uses are never hidden: the API returns them in `acceptedExceptions`, and both console and JSON CLI output report them separately from violations. Each accepted item includes the resolved exception and its `acceptedEdges`.
 
 ### Wildcard Dependencies
 
@@ -406,6 +454,14 @@ Use `"*"` to allow a layer to depend on any other layer:
             "allowedDependencies": []
         }
     },
+    "dependencyExceptions": [
+        {
+            "fromPackage": "@example/checkout",
+            "toPackage": "@example/audit-client",
+            "owner": "architecture",
+            "reason": "Temporary migration bridge"
+        }
+    ],
     "enforcement": {
         "mode": "error"
     },
