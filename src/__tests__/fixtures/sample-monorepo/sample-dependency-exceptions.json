@@ -1,0 +1,8 @@
+[
+    {
+        "fromPackage": "@sample/bad-pkg",
+        "toPackage": "@sample/infra",
+        "owner": "platform",
+        "reason": "Temporary migration bridge"
+    }
+]

@@ -345,6 +345,17 @@ describe('validateLayers', () => {
         expect(result.acceptedExceptions[0].exception.scope).toBe('layer');
     });
 
+    it('loads and reports dependency exceptions from a file', async () => {
+        const result = await validateLayers({
+            workspaceRoot: MONOREPO_DIR,
+            configPath: resolve(CONFIGS_DIR, 'valid-config-with-exception-file.json'),
+        });
+
+        expect(result.violations).toEqual([]);
+        expect(result.acceptedExceptions).toHaveLength(1);
+        expect(result.acceptedExceptions[0].acceptedEdges[0].fromPackage).toBe('@sample/bad-pkg');
+    });
+
     it('rejects semantic dependency exception errors as config validation failures', async () => {
         await expect(
             validateLayers({

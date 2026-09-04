@@ -117,4 +117,22 @@ describe('handleValidateCommand', () => {
             acceptedExceptions: [{ acceptedEdges: [{ fromPackage: '@sample/bad-pkg' }] }],
         });
     });
+
+    it('reports accepted exceptions loaded from a file', async () => {
+        const config = resolve(CONFIGS_DIR, 'valid-config-with-exception-file.json');
+        const logSpy = jest.spyOn(console, 'log');
+
+        expect(await handleValidateCommand(buildCliOptions({ config, format: 'json' }))).toBe(0);
+        const output = logSpy.mock.calls
+            .map(call => call[0] as string)
+            .find(message => {
+                try {
+                    return JSON.parse(message).acceptedExceptions?.length === 1;
+                } catch {
+                    return false;
+                }
+            });
+
+        expect(output).toBeDefined();
+    });
 });

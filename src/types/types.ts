@@ -7,7 +7,10 @@ export interface StratifyConfig {
     layers: LayerMap;
     workspaces?: Partial<WorkspaceConfig>;
     enforcement?: Partial<EnforcementConfig>;
+    /** Inline dependency exceptions. Mutually exclusive with dependencyExceptionsFile. */
     dependencyExceptions?: DependencyException[];
+    /** JSON file containing dependency exceptions, relative to the workspace root. */
+    dependencyExceptionsFile?: string;
 }
 
 /**
@@ -19,6 +22,7 @@ export interface StratifyResolvedConfig {
     workspaces: WorkspaceConfig;
     enforcement: EnforcementConfig;
     dependencyExceptions: DependencyException[];
+    dependencyExceptionsFile?: string;
 }
 
 interface DependencyExceptionBase {

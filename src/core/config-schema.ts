@@ -51,6 +51,25 @@ export function validateConfigSchema(raw: unknown): Result<StratifyConfig, Confi
         });
     }
 
+    if (obj.dependencyExceptions !== undefined && obj.dependencyExceptionsFile !== undefined) {
+        return err({
+            type: 'config-validation-error',
+            message:
+                'Config has both "dependencyExceptions" and "dependencyExceptionsFile" — use one or the other',
+        });
+    }
+
+    if (
+        obj.dependencyExceptionsFile !== undefined &&
+        (typeof obj.dependencyExceptionsFile !== 'string' ||
+            obj.dependencyExceptionsFile.trim() === '')
+    ) {
+        return err({
+            type: 'config-validation-error',
+            message: '"dependencyExceptionsFile" must be a non-empty string',
+        });
+    }
+
     const dependencyExceptionsResult = validateDependencyExceptions(
         obj.dependencyExceptions,
         layers
@@ -148,12 +167,14 @@ export function validateConfigSchema(raw: unknown): Result<StratifyConfig, Confi
         enforcement: obj.enforcement as Partial<EnforcementConfig> | undefined,
         workspaces: obj.workspaces as Partial<WorkspaceConfig> | undefined,
         dependencyExceptions: dependencyExceptionsResult.value,
+        dependencyExceptionsFile: obj.dependencyExceptionsFile as string | undefined,
     });
 }
 
-function validateDependencyExceptions(
+export function validateDependencyExceptions(
     raw: unknown,
-    layers: Record<string, unknown>
+    layers: Record<string, unknown>,
+    source = 'dependencyExceptions'
 ): Result<DependencyException[] | undefined, ConfigError> {
     if (raw === undefined) {
         return ok(undefined);
@@ -161,7 +182,10 @@ function validateDependencyExceptions(
     if (!Array.isArray(raw)) {
         return err({
             type: 'config-validation-error',
-            message: '"dependencyExceptions" must be an array',
+            message:
+                source === 'dependencyExceptions'
+                    ? '"dependencyExceptions" must be an array'
+                    : `${source} must contain a JSON array`,
         });
     }
 
@@ -171,7 +195,7 @@ function validateDependencyExceptions(
     const allowedKeys = new Set(['fromPackage', 'fromLayer', 'toPackage', 'owner', 'reason']);
 
     raw.forEach((value, index) => {
-        const label = `dependencyExceptions[${index}]`;
+        const label = `${source}[${index}]`;
         if (value === null || typeof value !== 'object' || Array.isArray(value)) {
             errors.push(`${label} must be an object`);
             return;

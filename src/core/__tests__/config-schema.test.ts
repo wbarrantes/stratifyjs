@@ -459,6 +459,44 @@ describe('dependencyExceptions validation', () => {
         expect(validateConfigSchema({ layers, dependencyExceptions: [] }).success).toBe(true);
     });
 
+    it('accepts dependencyExceptionsFile as a non-empty string', () => {
+        const result = validateConfigSchema({
+            layers,
+            dependencyExceptionsFile: 'config/dependency-exceptions.json',
+        });
+
+        expect(result.success).toBe(true);
+        if (result.success) {
+            expect(result.value.dependencyExceptions).toBeUndefined();
+            expect(result.value.dependencyExceptionsFile).toBe('config/dependency-exceptions.json');
+        }
+    });
+
+    it('rejects dependencyExceptions and dependencyExceptionsFile together', () => {
+        const result = validateConfigSchema({
+            layers,
+            dependencyExceptions: [],
+            dependencyExceptionsFile: 'dependency-exceptions.json',
+        });
+
+        expect(result.success).toBe(false);
+        if (!result.success) {
+            expect(result.error.message).toContain('use one or the other');
+        }
+    });
+
+    it.each([[''], ['   '], [123]])(
+        'rejects invalid dependencyExceptionsFile value %p',
+        dependencyExceptionsFile => {
+            const result = validateConfigSchema({ layers, dependencyExceptionsFile });
+
+            expect(result.success).toBe(false);
+            if (!result.success) {
+                expect(result.error.message).toContain('must be a non-empty string');
+            }
+        }
+    );
+
     it.each([
         ['non-array', {}, '"dependencyExceptions" must be an array'],
         ['non-object entry', [null], 'must be an object'],

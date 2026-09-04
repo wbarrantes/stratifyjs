@@ -124,4 +124,14 @@ describe('applyDefaults', () => {
         expect(resolved.workspaces.dependencyTypes).toEqual(['dependencies', 'devDependencies']);
         expect(resolved.workspaces.patterns).toEqual(DEFAULT_PATTERNS);
     });
+
+    it('preserves a dependencyExceptionsFile without creating inline exceptions', () => {
+        const resolved = applyDefaults({
+            layers: { core: { allowedDependencies: [] } },
+            dependencyExceptionsFile: 'dependency-exceptions.json',
+        });
+
+        expect(resolved.dependencyExceptions).toEqual([]);
+        expect(resolved.dependencyExceptionsFile).toBe('dependency-exceptions.json');
+    });
 });

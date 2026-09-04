@@ -1,6 +1,7 @@
 import { resolve } from 'path';
 import { loadAllowedPackages } from '../adapters/allowlist-file-loader.js';
 import { loadConfigFromFile } from '../adapters/config-file-loader.js';
+import { loadDependencyExceptions } from '../adapters/dependency-exceptions-file-loader.js';
 import { discoverPackages } from '../adapters/file-system-discovery.js';
 import { applyDefaults } from '../core/config-defaults.js';
 import { validateConfigSchema } from '../core/config-schema.js';
@@ -86,6 +87,8 @@ export async function validateLayers(
         config = configResult.value;
     }
 
+    config = await resolveDependencyExceptions(config, workspaceRoot);
+
     // Apply mode override
     if (options.mode) {
         config = {
@@ -128,6 +131,29 @@ export async function validateLayers(
         acceptedExceptions: validation.acceptedExceptions,
         totalPackages: packages.length,
         duration,
+    };
+}
+
+async function resolveDependencyExceptions(
+    config: StratifyResolvedConfig,
+    workspaceRoot: string
+): Promise<StratifyResolvedConfig> {
+    if (config.dependencyExceptionsFile === undefined) {
+        return config;
+    }
+
+    const result = await loadDependencyExceptions(
+        workspaceRoot,
+        config.dependencyExceptionsFile,
+        config.layers
+    );
+    if (!result.success) {
+        throw new StratifyError(result.error);
+    }
+
+    return {
+        ...config,
+        dependencyExceptions: result.value,
     };
 }
 

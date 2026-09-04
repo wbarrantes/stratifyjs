@@ -1,0 +1,20 @@
+{
+    "layers": {
+        "ui": {
+            "allowedDependencies": ["core"]
+        },
+        "core": {
+            "allowedDependencies": ["infra"]
+        },
+        "infra": {
+            "allowedDependencies": []
+        }
+    },
+    "dependencyExceptionsFile": "sample-dependency-exceptions.json",
+    "enforcement": {
+        "mode": "error"
+    },
+    "workspaces": {
+        "patterns": ["packages/*"]
+    }
+}

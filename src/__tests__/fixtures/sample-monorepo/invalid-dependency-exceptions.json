@@ -1,0 +1,9 @@
+[
+    {
+        "fromPackage": "@sample/bad-pkg",
+        "fromLayer": "ui",
+        "toPackage": "@sample/infra",
+        "owner": "",
+        "reason": "Malformed exception"
+    }
+]

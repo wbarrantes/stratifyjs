@@ -391,6 +391,16 @@ The two fields are mutually exclusive — specifying both on the same layer is a
 }
 ```
 
+For large exception lists, put the same JSON array in a separate file and reference it relative to the workspace root:
+
+```json
+{
+    "dependencyExceptionsFile": "config/dependency-exceptions.json"
+}
+```
+
+`dependencyExceptions` and `dependencyExceptionsFile` are mutually exclusive. Specifying both, even when the inline array is empty, is a configuration error. An empty inline or file-backed array is valid and means no exceptions are configured.
+
 A layer may consume one designated target capability when multiple packages require the same exception:
 
 ```json
@@ -413,7 +423,7 @@ Each entry must use exactly one supported scope:
 | Exact edge | `fromPackage`, `toPackage`, `owner`, `reason` | Allows one package to depend on one package |
 | Designated capability | `fromLayer`, `toPackage`, `owner`, `reason` | Allows packages in one layer to depend on one package |
 
-Broad layer-to-layer exceptions are intentionally unsupported. `owner` and `reason` must be non-empty. Source layers and all referenced packages must exist, and each exception must match at least one discovered runtime dependency that would otherwise violate `allowedDependencies`. Duplicate, overlapping, stale, unnecessary, and otherwise unused exceptions are configuration errors.
+Broad layer-to-layer exceptions are intentionally unsupported. `owner` and `reason` must be non-empty. Source layers and all referenced packages must exist, and each exception must match at least one discovered runtime dependency that would otherwise violate `allowedDependencies`. Duplicate, overlapping, stale, unnecessary, and otherwise unused exceptions are configuration errors. Inline and file-backed entries use the same validation and semantics.
 
 Successful uses are never hidden: the API returns them in `acceptedExceptions`, and both console and JSON CLI output report them separately from violations. Each accepted item includes the resolved exception and its `acceptedEdges`.
 
