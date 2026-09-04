@@ -162,13 +162,21 @@ export function validateConfigSchema(raw: unknown): Result<StratifyConfig, Confi
         }
     }
 
-    return ok({
+    const config = {
         layers: obj.layers as LayerMap,
         enforcement: obj.enforcement as Partial<EnforcementConfig> | undefined,
         workspaces: obj.workspaces as Partial<WorkspaceConfig> | undefined,
-        dependencyExceptions: dependencyExceptionsResult.value,
-        dependencyExceptionsFile: obj.dependencyExceptionsFile as string | undefined,
-    });
+    };
+
+    return obj.dependencyExceptionsFile !== undefined
+        ? ok({
+              ...config,
+              dependencyExceptionsFile: obj.dependencyExceptionsFile as string,
+          })
+        : ok({
+              ...config,
+              dependencyExceptions: dependencyExceptionsResult.value,
+          });
 }
 
 export function validateDependencyExceptions(

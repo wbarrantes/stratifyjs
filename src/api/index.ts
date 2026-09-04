@@ -4,13 +4,9 @@ export type { ValidateLayersOptions, ValidateLayersResult } from './api.js';
 
 // Public types
 export type {
-    AcceptedDependencyEdge,
     AcceptedDependencyException,
     DependencyException,
     EnforcementMode,
-    LayerDependencyException,
-    PackageDependencyException,
-    ResolvedDependencyException,
     StratifyConfig,
     Violation,
 } from '../types/types.js';

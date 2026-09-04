@@ -340,6 +340,31 @@ describe('dependency exceptions', () => {
         expect(result.violations.map(violation => violation.package)).toEqual(['@app/shell']);
     });
 
+    it('reports ambiguous exception indexes in configuration order', () => {
+        const config = createTestConfig({
+            dependencyExceptions: [
+                {
+                    fromLayer: 'ui',
+                    toPackage: '@app/infra',
+                    owner: 'architecture',
+                    reason: 'Capability exception',
+                },
+                {
+                    fromPackage: '@app/shell',
+                    toPackage: '@app/infra',
+                    owner: 'platform',
+                    reason: 'Exact exception',
+                },
+            ],
+        });
+
+        const result = validatePackagesWithExceptions(packages, config);
+
+        expect(result.exceptionErrors[0]).toContain(
+            'dependencyExceptions[0], dependencyExceptions[1]'
+        );
+    });
+
     it('rejects stale exceptions with no matching runtime dependency', () => {
         const config = createTestConfig({
             dependencyExceptions: [
@@ -458,5 +483,37 @@ describe('dependency exceptions', () => {
         expect(result.exceptionErrors).toEqual([expect.stringContaining('is stale')]);
         expect(result.violations).toHaveLength(1);
         expect(result.acceptedExceptions).toEqual([]);
+    });
+
+    it('treats runtime dependencies excluded from validation as stale', () => {
+        const selectedDevOnlyPackages = [
+            createTestPackage({
+                name: '@app/shell',
+                layer: 'ui',
+                dependencies: [],
+                runtimeDependencies: ['@app/infra'],
+            }),
+            createTestPackage({ name: '@app/infra', layer: 'infra' }),
+        ];
+        const config = createTestConfig({
+            workspaces: {
+                patterns: [],
+                protocols: ['workspace:'],
+                ignore: [],
+                dependencyTypes: ['devDependencies'],
+            },
+            dependencyExceptions: [
+                {
+                    fromPackage: '@app/shell',
+                    toPackage: '@app/infra',
+                    owner: 'platform',
+                    reason: 'Runtime validation is disabled',
+                },
+            ],
+        });
+
+        const result = validatePackagesWithExceptions(selectedDevOnlyPackages, config);
+
+        expect(result.exceptionErrors).toEqual([expect.stringContaining('is stale')]);
     });
 });

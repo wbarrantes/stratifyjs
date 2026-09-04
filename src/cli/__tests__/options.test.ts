@@ -1,5 +1,4 @@
 import { parseCliOptions, toLibraryOptions } from '../options.js';
-import { createTestConfig } from '../../__tests__/fixtures/helpers.js';
 
 describe('parseCliOptions', () => {
     it('parses all provided options', () => {
@@ -37,7 +36,7 @@ describe('parseCliOptions', () => {
 });
 
 describe('toLibraryOptions', () => {
-    it('returns configPath when no resolvedConfig is provided', () => {
+    it('returns configPath', () => {
         const result = toLibraryOptions({
             root: '/workspace',
             config: 'stratify.config.json',
@@ -52,32 +51,15 @@ describe('toLibraryOptions', () => {
         expect(result).not.toHaveProperty('config');
     });
 
-    it('returns config object when resolvedConfig is provided', () => {
-        const config = createTestConfig();
-        const result = toLibraryOptions(
-            { root: '/workspace', config: 'stratify.config.json', format: 'console' },
-            config
-        );
-
-        expect(result.config).toBe(config);
-        expect(result).not.toHaveProperty('configPath');
-        expect(result.workspaceRoot).toBe('/workspace');
-    });
-
-    it('passes CLI mode through regardless of resolvedConfig', () => {
-        const config = createTestConfig({ enforcement: { mode: 'warn' } });
-        const result = toLibraryOptions(
-            {
-                root: '/workspace',
-                config: 'stratify.config.json',
-                mode: 'error',
-                format: 'console',
-            },
-            config
-        );
+    it('passes CLI mode through', () => {
+        const result = toLibraryOptions({
+            root: '/workspace',
+            config: 'stratify.config.json',
+            mode: 'error',
+            format: 'console',
+        });
 
         expect(result.mode).toBe('error');
-        expect(result.config).toBe(config);
     });
 
     it('passes undefined mode when CLI mode is not set', () => {

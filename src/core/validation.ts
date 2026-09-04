@@ -42,6 +42,11 @@ interface ExceptionState {
     acceptedEdges: AcceptedDependencyEdge[];
 }
 
+interface ExceptionIndex {
+    byTargetAndPackage: Map<string, Map<string, ExceptionState>>;
+    byTargetAndLayer: Map<string, Map<string, ExceptionState>>;
+}
+
 /**
  * Validate packages and resolve every configured dependency exception against real edges.
  */
@@ -56,6 +61,12 @@ export function validatePackagesWithExceptions(
     const exceptionErrors: string[] = [];
     const invalidExceptionIndexes = new Set<number>();
     const ambiguousExceptionIndexes = new Set<number>();
+    const allowedDependenciesByLayer = new Map(
+        Object.entries(config.layers).map(([layer, definition]) => [
+            layer,
+            new Set(definition.allowedDependencies),
+        ])
+    );
     const exceptionStates = config.dependencyExceptions.map(
         (exception, configurationIndex): ExceptionState => ({
             exception:
@@ -81,6 +92,7 @@ export function validatePackagesWithExceptions(
             acceptedEdges: [],
         })
     );
+    const exceptionIndex = createExceptionIndex(exceptionStates);
 
     for (const state of exceptionStates) {
         const { exception } = state;
@@ -104,16 +116,27 @@ export function validatePackagesWithExceptions(
         }
     }
 
-    // Record real internal edges independently of rule eligibility so stale and unused
-    // exceptions can be distinguished after normal validation.
-    for (const pkg of packages) {
-        for (const depName of pkg.dependencies) {
-            if (!packageMap.has(depName) || !isRuntimeDependency(pkg, depName)) {
-                continue;
-            }
-            for (const state of exceptionStates) {
-                if (matchesException(state.exception, pkg, depName)) {
-                    state.matchingRealEdges++;
+    const runtimeDependenciesByPackage = new Map<string, Set<string>>();
+    if (exceptionStates.length > 0) {
+        // Record real runtime edges independently of rule eligibility so stale and unused
+        // exceptions can be distinguished after normal validation.
+        for (const pkg of packages) {
+            const runtimeDependencies = new Set(pkg.runtimeDependencies ?? pkg.dependencies);
+            runtimeDependenciesByPackage.set(pkg.name, runtimeDependencies);
+            for (const depName of pkg.dependencies) {
+                if (!runtimeDependencies.has(depName) || !packageMap.has(depName)) {
+                    continue;
+                }
+                const packageState = exceptionIndex.byTargetAndPackage.get(depName)?.get(pkg.name);
+                if (packageState) {
+                    packageState.matchingRealEdges++;
+                }
+                const layerState =
+                    pkg.layer === undefined
+                        ? undefined
+                        : exceptionIndex.byTargetAndLayer.get(depName)?.get(pkg.layer);
+                if (layerState) {
+                    layerState.matchingRealEdges++;
                 }
             }
         }
@@ -172,25 +195,33 @@ export function validatePackagesWithExceptions(
 
         // Rule 4: Each dependency must target an allowed layer
         const layerDef = config.layers[layer];
-        const allowedDeps = new Set(layerDef.allowedDependencies);
+        const allowedDeps = allowedDependenciesByLayer.get(layer)!;
         for (const depName of pkg.dependencies) {
             const depPkg = packageMap.get(depName);
             if (!depPkg || !depPkg.layer) {
                 continue; // Skip dependencies that are not discovered or have no layer
             }
 
-            const matchingStates = isRuntimeDependency(pkg, depName)
-                ? exceptionStates.filter(state => matchesException(state.exception, pkg, depName))
-                : [];
+            const isRuntimeDependency = runtimeDependenciesByPackage.get(pkg.name)?.has(depName);
+            const packageState = isRuntimeDependency
+                ? exceptionIndex.byTargetAndPackage.get(depName)?.get(pkg.name)
+                : undefined;
+            const layerState = isRuntimeDependency
+                ? exceptionIndex.byTargetAndLayer.get(depName)?.get(layer)
+                : undefined;
+            const matchingStateCount = (packageState ? 1 : 0) + (layerState ? 1 : 0);
             if (isDependencyAllowed(layer, depPkg.layer, allowedDeps)) {
-                for (const state of matchingStates) {
-                    state.matchedAllowedEdge = true;
+                if (packageState) {
+                    packageState.matchedAllowedEdge = true;
+                }
+                if (layerState) {
+                    layerState.matchedAllowedEdge = true;
                 }
                 continue;
             }
 
-            if (matchingStates.length === 1) {
-                matchingStates[0].acceptedEdges.push({
+            if (matchingStateCount === 1) {
+                (packageState ?? layerState)!.acceptedEdges.push({
                     fromPackage: pkg.name,
                     fromLayer: layer,
                     toPackage: depPkg.name,
@@ -199,8 +230,11 @@ export function validatePackagesWithExceptions(
                 continue;
             }
 
-            if (matchingStates.length > 1) {
-                const indexes = matchingStates.map(state => state.exception.configurationIndex);
+            if (matchingStateCount > 1) {
+                const indexes = [
+                    packageState!.exception.configurationIndex,
+                    layerState!.exception.configurationIndex,
+                ].sort((a, b) => a - b);
                 for (const index of indexes) {
                     ambiguousExceptionIndexes.add(index);
                 }
@@ -250,21 +284,28 @@ export function validatePackagesWithExceptions(
     };
 }
 
-function isRuntimeDependency(pkg: Package, dependencyName: string): boolean {
-    return (pkg.runtimeDependencies ?? pkg.dependencies).includes(dependencyName);
-}
+function createExceptionIndex(states: ExceptionState[]): ExceptionIndex {
+    const index: ExceptionIndex = {
+        byTargetAndPackage: new Map(),
+        byTargetAndLayer: new Map(),
+    };
 
-function matchesException(
-    exception: ResolvedDependencyException,
-    fromPackage: Package,
-    toPackage: string
-): boolean {
-    if (exception.toPackage !== toPackage) {
-        return false;
+    for (const state of states) {
+        const { exception } = state;
+        const bySource =
+            exception.scope === 'package' ? index.byTargetAndPackage : index.byTargetAndLayer;
+        let targetIndex = bySource.get(exception.toPackage);
+        if (targetIndex === undefined) {
+            targetIndex = new Map();
+            bySource.set(exception.toPackage, targetIndex);
+        }
+        targetIndex.set(
+            exception.scope === 'package' ? exception.fromPackage : exception.fromLayer,
+            state
+        );
     }
-    return exception.scope === 'package'
-        ? exception.fromPackage === fromPackage.name
-        : exception.fromLayer === fromPackage.layer;
+
+    return index;
 }
 
 function createInvalidDependencyViolation(

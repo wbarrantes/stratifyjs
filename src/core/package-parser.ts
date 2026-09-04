@@ -36,19 +36,25 @@ export function parsePackageJson(
         });
     }
 
+    const runtimeDependencies = extractInternalDependencies(
+        protocols,
+        ['dependencies'],
+        pkg as Record<string, unknown>
+    );
+    const dependencies =
+        dependencyTypes.length === 1 && dependencyTypes[0] === 'dependencies'
+            ? runtimeDependencies
+            : extractInternalDependencies(
+                  protocols,
+                  dependencyTypes,
+                  pkg as Record<string, unknown>
+              );
+
     return ok({
         name: pkg.name,
         layer: typeof pkg.layer === 'string' ? pkg.layer : undefined,
-        dependencies: extractInternalDependencies(
-            protocols,
-            dependencyTypes,
-            pkg as Record<string, unknown>
-        ),
-        runtimeDependencies: extractInternalDependencies(
-            protocols,
-            ['dependencies'],
-            pkg as Record<string, unknown>
-        ),
+        dependencies,
+        runtimeDependencies,
         path: relativePath,
     });
 }
