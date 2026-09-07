@@ -10,6 +10,7 @@ import type { ConfigError } from './errors.js';
 import type { Result } from './result.js';
 import { ok, err } from './result.js';
 import { VALID_ENFORCEMENT_MODES, VALID_DEPENDENCY_TYPES } from './constants.js';
+import { formatDependencyExceptionLabel } from './dependency-exception-label.js';
 
 /**
  * Validate that a raw parsed object conforms to the StratifyConfig schema.
@@ -199,17 +200,17 @@ export function validateDependencyExceptions(
 
     const errors: string[] = [];
     const exceptions: DependencyException[] = [];
-    const seen = new Set<string>();
+    const seen = new Map<string, number>();
     const allowedKeys = new Set(['fromPackage', 'fromLayer', 'toPackage', 'owner', 'reason']);
 
     raw.forEach((value, index) => {
-        const label = `${source}[${index}]`;
         if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-            errors.push(`${label} must be an object`);
+            errors.push(`${formatDependencyExceptionLabel(index, {}, source)} must be an object`);
             return;
         }
 
         const entry = value as Record<string, unknown>;
+        const label = formatDependencyExceptionLabel(index, entry, source);
         const unknownKeys = Object.keys(entry).filter(key => !allowedKeys.has(key));
         if (unknownKeys.length > 0) {
             errors.push(`${label} has unsupported field(s): ${unknownKeys.join(', ')}`);
@@ -223,20 +224,20 @@ export function validateDependencyExceptions(
 
         for (const field of ['toPackage', 'owner', 'reason'] as const) {
             if (typeof entry[field] !== 'string' || entry[field].trim() === '') {
-                errors.push(`${label}.${field} must be a non-empty string`);
+                errors.push(`${label}: "${field}" must be a non-empty string`);
             }
         }
         if (
             hasFromPackage &&
             (typeof entry.fromPackage !== 'string' || entry.fromPackage.trim() === '')
         ) {
-            errors.push(`${label}.fromPackage must be a non-empty string`);
+            errors.push(`${label}: "fromPackage" must be a non-empty string`);
         }
         if (
             hasFromLayer &&
             (typeof entry.fromLayer !== 'string' || entry.fromLayer.trim() === '')
         ) {
-            errors.push(`${label}.fromLayer must be a non-empty string`);
+            errors.push(`${label}: "fromLayer" must be a non-empty string`);
         } else if (
             hasFromLayer &&
             typeof entry.fromLayer === 'string' &&
@@ -267,11 +268,18 @@ export function validateDependencyExceptions(
         const key = hasFromPackage
             ? `package:${entry.fromPackage as string}->${entry.toPackage}`
             : `layer:${entry.fromLayer as string}->${entry.toPackage}`;
-        if (seen.has(key)) {
-            errors.push(`${label} duplicates an earlier exception for ${key}`);
+        const duplicateIndex = seen.get(key);
+        if (duplicateIndex !== undefined) {
+            errors.push(
+                `${label} duplicates ${formatDependencyExceptionLabel(
+                    duplicateIndex,
+                    raw[duplicateIndex] as Record<string, unknown>,
+                    source
+                )}`
+            );
             return;
         }
-        seen.add(key);
+        seen.set(key, index);
 
         if (hasFromPackage) {
             exceptions.push({

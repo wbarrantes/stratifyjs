@@ -22,7 +22,7 @@ export async function loadDependencyExceptions(
     const result = validateDependencyExceptions(
         parsed.value,
         layers,
-        `Dependency-exceptions file "${filePath}"`
+        `dependency-exceptions file "${filePath}"`
     );
     if (!result.success) {
         return result;

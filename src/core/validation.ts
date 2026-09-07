@@ -12,6 +12,7 @@ import {
     isDependencyAllowed,
     isPackageAllowedInLayer,
 } from './rules.js';
+import { formatDependencyExceptionLabel } from './dependency-exception-label.js';
 
 /**
  * Validate all packages against layer configuration.
@@ -59,6 +60,10 @@ export function validatePackagesWithExceptions(
     const packageMap = new Map(packages.map(pkg => [pkg.name, pkg]));
     const validLayers = Object.keys(config.layers).join(', ');
     const exceptionErrors: string[] = [];
+    const exceptionSource =
+        config.dependencyExceptionsFile === undefined
+            ? 'dependencyExceptions'
+            : `dependency-exceptions file "${config.dependencyExceptionsFile}"`;
     const invalidExceptionIndexes = new Set<number>();
     const ambiguousExceptionIndexes = new Set<number>();
     const allowedDependenciesByLayer = new Map(
@@ -96,21 +101,26 @@ export function validatePackagesWithExceptions(
 
     for (const state of exceptionStates) {
         const { exception } = state;
+        const label = formatDependencyExceptionLabel(
+            exception.configurationIndex,
+            exception,
+            exceptionSource
+        );
         if (exception.scope === 'package' && !packageMap.has(exception.fromPackage)) {
             exceptionErrors.push(
-                `dependencyExceptions[${exception.configurationIndex}] references unknown source package "${exception.fromPackage}"`
+                `${label} references unknown source package "${exception.fromPackage}"`
             );
             invalidExceptionIndexes.add(exception.configurationIndex);
         }
         if (exception.scope === 'layer' && !Object.hasOwn(config.layers, exception.fromLayer)) {
             exceptionErrors.push(
-                `dependencyExceptions[${exception.configurationIndex}] references unknown source layer "${exception.fromLayer}"`
+                `${label} references unknown source layer "${exception.fromLayer}"`
             );
             invalidExceptionIndexes.add(exception.configurationIndex);
         }
         if (!packageMap.has(exception.toPackage)) {
             exceptionErrors.push(
-                `dependencyExceptions[${exception.configurationIndex}] references unknown target package "${exception.toPackage}"`
+                `${label} references unknown target package "${exception.toPackage}"`
             );
             invalidExceptionIndexes.add(exception.configurationIndex);
         }
@@ -239,7 +249,15 @@ export function validatePackagesWithExceptions(
                     ambiguousExceptionIndexes.add(index);
                 }
                 exceptionErrors.push(
-                    `Dependency "${pkg.name}" -> "${depPkg.name}" is ambiguously covered by dependencyExceptions[${indexes.join('], dependencyExceptions[')}]`
+                    `Dependency "${pkg.name}" -> "${depPkg.name}" is ambiguously covered by ${indexes
+                        .map(index =>
+                            formatDependencyExceptionLabel(
+                                index,
+                                exceptionStates[index].exception,
+                                exceptionSource
+                            )
+                        )
+                        .join(' and ')}`
                 );
             }
 
@@ -251,6 +269,11 @@ export function validatePackagesWithExceptions(
 
     for (const state of exceptionStates) {
         const { exception } = state;
+        const label = formatDependencyExceptionLabel(
+            exception.configurationIndex,
+            exception,
+            exceptionSource
+        );
         if (
             invalidExceptionIndexes.has(exception.configurationIndex) ||
             ambiguousExceptionIndexes.has(exception.configurationIndex)
@@ -259,15 +282,13 @@ export function validatePackagesWithExceptions(
         }
         if (state.matchedAllowedEdge) {
             exceptionErrors.push(
-                `dependencyExceptions[${exception.configurationIndex}] is unnecessary because its matching dependency is already allowed`
+                `${label} is unnecessary because its matching dependency is already allowed`
             );
         } else if (state.matchingRealEdges === 0) {
-            exceptionErrors.push(
-                `dependencyExceptions[${exception.configurationIndex}] is stale because no matching runtime dependency exists`
-            );
+            exceptionErrors.push(`${label} is stale because no matching runtime dependency exists`);
         } else if (state.acceptedEdges.length === 0) {
             exceptionErrors.push(
-                `dependencyExceptions[${exception.configurationIndex}] is unused because its matching dependency is not eligible for a dependency exception`
+                `${label} is unused because its matching dependency is not eligible for a dependency exception`
             );
         }
     }

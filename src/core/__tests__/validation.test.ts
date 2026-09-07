@@ -361,7 +361,10 @@ describe('dependency exceptions', () => {
         const result = validatePackagesWithExceptions(packages, config);
 
         expect(result.exceptionErrors[0]).toContain(
-            'dependencyExceptions[0], dependencyExceptions[1]'
+            'Dependency exception #1 (layer "ui" -> package "@app/infra") (dependencyExceptions[0])'
+        );
+        expect(result.exceptionErrors[0]).toContain(
+            'Dependency exception #2 (package "@app/shell" -> package "@app/infra") (dependencyExceptions[1])'
         );
     });
 
@@ -380,6 +383,26 @@ describe('dependency exceptions', () => {
         const result = validatePackagesWithExceptions(packages, config);
 
         expect(result.exceptionErrors).toEqual([expect.stringContaining('is stale')]);
+    });
+
+    it('identifies file-backed exceptions in semantic errors', () => {
+        const config = createTestConfig({
+            dependencyExceptionsFile: 'dependency-exceptions.json',
+            dependencyExceptions: [
+                {
+                    fromPackage: '@app/infra',
+                    toPackage: '@app/shell',
+                    owner: 'platform',
+                    reason: 'No longer needed',
+                },
+            ],
+        });
+
+        const result = validatePackagesWithExceptions(packages, config);
+
+        expect(result.exceptionErrors).toEqual([
+            'Dependency exception #1 (package "@app/infra" -> package "@app/shell") in dependency-exceptions file "dependency-exceptions.json" (array index 0) is stale because no matching runtime dependency exists',
+        ]);
     });
 
     it('rejects unnecessary exceptions for already allowed edges', () => {

@@ -64,12 +64,10 @@ describe('loadDependencyExceptions', () => {
 
         expect(result.success).toBe(false);
         if (!result.success && result.error.type === 'config-validation-error') {
-            expect(result.error.details).toEqual(
-                expect.arrayContaining([
-                    expect.stringContaining('must specify exactly one'),
-                    expect.stringContaining('owner must be a non-empty string'),
-                ])
-            );
+            expect(result.error.details).toEqual([
+                'Dependency exception #1 (package "@sample/bad-pkg", layer "ui" -> package "@sample/infra") in dependency-exceptions file "invalid-dependency-exceptions.json" (array index 0) must specify exactly one of "fromPackage" or "fromLayer"',
+                'Dependency exception #1 (package "@sample/bad-pkg", layer "ui" -> package "@sample/infra") in dependency-exceptions file "invalid-dependency-exceptions.json" (array index 0): "owner" must be a non-empty string',
+            ]);
         }
     });
 });

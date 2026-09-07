@@ -528,7 +528,7 @@ describe('dependencyExceptions validation', () => {
                     reason: 'Migration',
                 },
             ],
-            'owner must be a non-empty string',
+            '"owner" must be a non-empty string',
         ],
         [
             'empty reason',
@@ -540,7 +540,7 @@ describe('dependencyExceptions validation', () => {
                     reason: ' ',
                 },
             ],
-            'reason must be a non-empty string',
+            '"reason" must be a non-empty string',
         ],
         [
             'unknown source layer',
@@ -598,9 +598,51 @@ describe('dependencyExceptions validation', () => {
 
         expect(result.success).toBe(false);
         if (!result.success && result.error.type === 'config-validation-error') {
-            expect(result.error.details).toEqual(
-                expect.arrayContaining([expect.stringContaining('duplicates')])
-            );
+            expect(result.error.details).toEqual([
+                'Dependency exception #2 (package "@app/shell" -> package "@app/core") (dependencyExceptions[1]) duplicates Dependency exception #1 (package "@app/shell" -> package "@app/core") (dependencyExceptions[0])',
+            ]);
+        }
+    });
+
+    it('identifies the edge and one-based entry number for invalid metadata', () => {
+        const result = validateConfigSchema({
+            layers,
+            dependencyExceptions: [
+                {
+                    fromPackage: '@app/shell',
+                    toPackage: '@app/core',
+                    owner: '',
+                    reason: 'Migration',
+                },
+            ],
+        });
+
+        expect(result.success).toBe(false);
+        if (!result.success && result.error.type === 'config-validation-error') {
+            expect(result.error.details).toEqual([
+                'Dependency exception #1 (package "@app/shell" -> package "@app/core") (dependencyExceptions[0]): "owner" must be a non-empty string',
+            ]);
+        }
+    });
+
+    it('identifies the edge and one-based entry number for unknown layers', () => {
+        const result = validateConfigSchema({
+            layers,
+            dependencyExceptions: [
+                {
+                    fromLayer: 'widget',
+                    toPackage: '@app/core',
+                    owner: 'platform',
+                    reason: 'Migration',
+                },
+            ],
+        });
+
+        expect(result.success).toBe(false);
+        if (!result.success && result.error.type === 'config-validation-error') {
+            expect(result.error.details).toEqual([
+                'Dependency exception #1 (layer "widget" -> package "@app/core") (dependencyExceptions[0]) references unknown source layer "widget"',
+            ]);
         }
     });
 
