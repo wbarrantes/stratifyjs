@@ -1,6 +1,16 @@
-# Changelog - stratifyjs
+# Change Log - stratifyjs
 
-<!-- This changelog is automatically updated by beachball. Do not edit manually. -->
+<!-- This log was last generated on Tue, 08 Sep 2026 21:10:39 GMT and should not be manually modified. -->
+
+<!-- Start content -->
+
+## 4.0.0
+
+Tue, 08 Sep 2026 21:10:39 GMT
+
+### Major changes
+
+- Support empty membership allowlists and explicit dependency exceptions with mutually exclusive inline and file-backed configuration (walterb@microsoft.com)
 
 ## 3.0.0
 

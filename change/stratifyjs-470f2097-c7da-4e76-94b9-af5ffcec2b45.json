@@ -1,7 +1,0 @@
-{
-  "type": "none",
-  "comment": "feat: add support for configurable dependency types in workspace settings",
-  "packageName": "stratifyjs",
-  "email": "wbarrantes@hotmail.com",
-  "dependentChangeType": "none"
-}

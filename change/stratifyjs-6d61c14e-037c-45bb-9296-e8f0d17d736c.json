@@ -1,7 +1,0 @@
-{
-    "type": "major",
-    "comment": "Support empty membership allowlists and explicit dependency exceptions with mutually exclusive inline and file-backed configuration",
-    "packageName": "stratifyjs",
-    "email": "walterb@microsoft.com",
-    "dependentChangeType": "none"
-}

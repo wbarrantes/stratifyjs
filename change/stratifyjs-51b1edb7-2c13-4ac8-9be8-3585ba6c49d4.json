@@ -1,7 +1,0 @@
-{
-  "type": "none",
-  "comment": "feat: add beachball for changelog management and update dependencies",
-  "packageName": "stratifyjs",
-  "email": "wbarrantes@hotmail.com",
-  "dependentChangeType": "none"
-}

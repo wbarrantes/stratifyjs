@@ -1,6 +1,6 @@
 {
   "name": "stratifyjs",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "description": "Enforce architectural layer boundaries in monorepos",
   "type": "module",
   "bin": {
