@@ -1,8 +1,8 @@
-import { readFile } from 'fs/promises';
 import { resolve } from 'path';
 import type { ConfigError } from '../core/errors.js';
 import type { Result } from '../core/result.js';
 import { ok, err } from '../core/result.js';
+import { loadJsonFile } from './json-file-loader.js';
 
 /**
  * Load an allowed-packages JSON file from disk and return the set of package names.
@@ -20,44 +20,16 @@ export async function loadAllowedPackages(
     filePath: string
 ): Promise<Result<Set<string>, ConfigError>> {
     const fullPath = resolve(workspaceRoot, filePath);
-
-    let content: string;
-    try {
-        content = await readFile(fullPath, 'utf-8');
-    } catch (error) {
-        const code = (error as NodeJS.ErrnoException).code;
-        if (code === 'ENOENT') {
-            return err({
-                type: 'config-not-found',
-                message: `Allowed-packages file not found: ${fullPath}`,
-                path: fullPath,
-            });
-        }
-        return err({
-            type: 'config-read-error',
-            message: error instanceof Error ? error.message : String(error),
-            path: fullPath,
-            cause: error,
-        });
+    const parsed = await loadJsonFile(fullPath, 'Allowed-packages file');
+    if (!parsed.success) {
+        return parsed;
     }
 
-    let parsed: unknown;
-    try {
-        parsed = JSON.parse(content);
-    } catch (error) {
-        return err({
-            type: 'config-parse-error',
-            message: error instanceof Error ? error.message : String(error),
-            path: fullPath,
-            cause: error,
-        });
-    }
-
-    return validateAllowlistContent(parsed, filePath);
+    return validateAllowlistContent(parsed.value, filePath);
 }
 
 /**
- * Validate that parsed JSON is a non-empty array of strings.
+ * Validate that parsed JSON is an array of strings.
  *
  * @param parsed - The parsed JSON content to validate
  * @param filePath - The path to the file (for error messages)
@@ -71,13 +43,6 @@ export function validateAllowlistContent(
         return err({
             type: 'config-validation-error',
             message: `Allowed-packages file "${filePath}" must contain a JSON array`,
-        });
-    }
-
-    if (parsed.length === 0) {
-        return err({
-            type: 'config-validation-error',
-            message: `Allowed-packages file "${filePath}" must contain at least one package name`,
         });
     }
 

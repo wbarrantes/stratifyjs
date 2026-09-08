@@ -28,8 +28,7 @@ export async function handleValidateCommand(options: CliOptions): Promise<number
         // CLI --mode flag overrides the config file's mode
         const effectiveMode = options.mode ?? config.enforcement.mode;
 
-        // Pass the pre-built config to the API — it won't re-read the file
-        const result = await validateLayers(toLibraryOptions(options, config));
+        const result = await validateLayers(toLibraryOptions(options));
 
         logSuccess(`✅ Discovered ${result.totalPackages} packages\n`);
 
@@ -38,6 +37,7 @@ export async function handleValidateCommand(options: CliOptions): Promise<number
                 JSON.stringify(
                     {
                         violations: result.violations,
+                        acceptedExceptions: result.acceptedExceptions,
                         totalPackages: result.totalPackages,
                         duration: result.duration,
                     },
@@ -46,6 +46,22 @@ export async function handleValidateCommand(options: CliOptions): Promise<number
                 )
             );
         } else {
+            if (result.acceptedExceptions.length > 0) {
+                logInfo(
+                    `📌 Accepted ${result.acceptedExceptions.length} dependency exception(s):\n`
+                );
+                for (const usage of result.acceptedExceptions) {
+                    for (const edge of usage.acceptedEdges) {
+                        logPlain(
+                            `   ${edge.fromPackage} (${edge.fromLayer}) → ${edge.toPackage} (${edge.toLayer})`
+                        );
+                    }
+                    logGray(
+                        `   Owner: ${usage.exception.owner} | Reason: ${usage.exception.reason}\n`
+                    );
+                }
+            }
+
             if (result.violations.length === 0) {
                 logSuccess('✅ All packages comply with layer rules!');
             } else {

@@ -4,11 +4,13 @@ import type {
     LayerMap,
     EnforcementConfig,
     WorkspaceConfig,
+    DependencyException,
 } from '../types/types.js';
 import type { ConfigError } from './errors.js';
 import type { Result } from './result.js';
 import { ok, err } from './result.js';
 import { VALID_ENFORCEMENT_MODES, VALID_DEPENDENCY_TYPES } from './constants.js';
+import { formatDependencyExceptionLabel } from './dependency-exception-label.js';
 
 /**
  * Validate that a raw parsed object conforms to the StratifyConfig schema.
@@ -48,6 +50,33 @@ export function validateConfigSchema(raw: unknown): Result<StratifyConfig, Confi
             message: 'Invalid layer definitions',
             details: errors,
         });
+    }
+
+    if (obj.dependencyExceptions !== undefined && obj.dependencyExceptionsFile !== undefined) {
+        return err({
+            type: 'config-validation-error',
+            message:
+                'Config has both "dependencyExceptions" and "dependencyExceptionsFile" — use one or the other',
+        });
+    }
+
+    if (
+        obj.dependencyExceptionsFile !== undefined &&
+        (typeof obj.dependencyExceptionsFile !== 'string' ||
+            obj.dependencyExceptionsFile.trim() === '')
+    ) {
+        return err({
+            type: 'config-validation-error',
+            message: '"dependencyExceptionsFile" must be a non-empty string',
+        });
+    }
+
+    const dependencyExceptionsResult = validateDependencyExceptions(
+        obj.dependencyExceptions,
+        layers
+    );
+    if (!dependencyExceptionsResult.success) {
+        return dependencyExceptionsResult;
     }
 
     // Validate optional 'enforcement' field
@@ -134,11 +163,150 @@ export function validateConfigSchema(raw: unknown): Result<StratifyConfig, Confi
         }
     }
 
-    return ok({
+    const config = {
         layers: obj.layers as LayerMap,
         enforcement: obj.enforcement as Partial<EnforcementConfig> | undefined,
         workspaces: obj.workspaces as Partial<WorkspaceConfig> | undefined,
+    };
+
+    return obj.dependencyExceptionsFile !== undefined
+        ? ok({
+              ...config,
+              dependencyExceptionsFile: obj.dependencyExceptionsFile as string,
+          })
+        : ok({
+              ...config,
+              dependencyExceptions: dependencyExceptionsResult.value,
+          });
+}
+
+export function validateDependencyExceptions(
+    raw: unknown,
+    layers: Record<string, unknown>,
+    source = 'dependencyExceptions'
+): Result<DependencyException[] | undefined, ConfigError> {
+    if (raw === undefined) {
+        return ok(undefined);
+    }
+    if (!Array.isArray(raw)) {
+        return err({
+            type: 'config-validation-error',
+            message:
+                source === 'dependencyExceptions'
+                    ? '"dependencyExceptions" must be an array'
+                    : `${source} must contain a JSON array`,
+        });
+    }
+
+    const errors: string[] = [];
+    const exceptions: DependencyException[] = [];
+    const seen = new Map<string, number>();
+    const allowedKeys = new Set(['fromPackage', 'fromLayer', 'toPackage', 'owner', 'reason']);
+
+    raw.forEach((value, index) => {
+        if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+            errors.push(`${formatDependencyExceptionLabel(index, {}, source)} must be an object`);
+            return;
+        }
+
+        const entry = value as Record<string, unknown>;
+        const label = formatDependencyExceptionLabel(index, entry, source);
+        const unknownKeys = Object.keys(entry).filter(key => !allowedKeys.has(key));
+        if (unknownKeys.length > 0) {
+            errors.push(`${label} has unsupported field(s): ${unknownKeys.join(', ')}`);
+        }
+
+        const hasFromPackage = entry.fromPackage !== undefined;
+        const hasFromLayer = entry.fromLayer !== undefined;
+        if (hasFromPackage === hasFromLayer) {
+            errors.push(`${label} must specify exactly one of "fromPackage" or "fromLayer"`);
+        }
+
+        for (const field of ['toPackage', 'owner', 'reason'] as const) {
+            if (typeof entry[field] !== 'string' || entry[field].trim() === '') {
+                errors.push(`${label}: "${field}" must be a non-empty string`);
+            }
+        }
+        if (
+            hasFromPackage &&
+            (typeof entry.fromPackage !== 'string' || entry.fromPackage.trim() === '')
+        ) {
+            errors.push(`${label}: "fromPackage" must be a non-empty string`);
+        }
+        if (
+            hasFromLayer &&
+            (typeof entry.fromLayer !== 'string' || entry.fromLayer.trim() === '')
+        ) {
+            errors.push(`${label}: "fromLayer" must be a non-empty string`);
+        } else if (
+            hasFromLayer &&
+            typeof entry.fromLayer === 'string' &&
+            !Object.hasOwn(layers, entry.fromLayer)
+        ) {
+            errors.push(`${label} references unknown source layer "${entry.fromLayer}"`);
+        }
+
+        const isValid =
+            unknownKeys.length === 0 &&
+            hasFromPackage !== hasFromLayer &&
+            typeof entry.toPackage === 'string' &&
+            entry.toPackage.trim() !== '' &&
+            typeof entry.owner === 'string' &&
+            entry.owner.trim() !== '' &&
+            typeof entry.reason === 'string' &&
+            entry.reason.trim() !== '' &&
+            (hasFromPackage
+                ? typeof entry.fromPackage === 'string' && entry.fromPackage.trim() !== ''
+                : typeof entry.fromLayer === 'string' &&
+                  entry.fromLayer.trim() !== '' &&
+                  Object.hasOwn(layers, entry.fromLayer));
+
+        if (!isValid) {
+            return;
+        }
+
+        const key = hasFromPackage
+            ? `package:${entry.fromPackage as string}->${entry.toPackage}`
+            : `layer:${entry.fromLayer as string}->${entry.toPackage}`;
+        const duplicateIndex = seen.get(key);
+        if (duplicateIndex !== undefined) {
+            errors.push(
+                `${label} duplicates ${formatDependencyExceptionLabel(
+                    duplicateIndex,
+                    raw[duplicateIndex] as Record<string, unknown>,
+                    source
+                )}`
+            );
+            return;
+        }
+        seen.set(key, index);
+
+        if (hasFromPackage) {
+            exceptions.push({
+                fromPackage: entry.fromPackage as string,
+                toPackage: entry.toPackage as string,
+                owner: entry.owner as string,
+                reason: entry.reason as string,
+            });
+        } else {
+            exceptions.push({
+                fromLayer: entry.fromLayer as string,
+                toPackage: entry.toPackage as string,
+                owner: entry.owner as string,
+                reason: entry.reason as string,
+            });
+        }
     });
+
+    if (errors.length > 0) {
+        return err({
+            type: 'config-validation-error',
+            message: 'Invalid dependency exceptions',
+            details: errors,
+        });
+    }
+
+    return ok(exceptions);
 }
 
 /**
@@ -179,12 +347,11 @@ export function validateLayerDefinition(
     if (def.allowedPackages !== undefined) {
         if (
             !Array.isArray(def.allowedPackages) ||
-            def.allowedPackages.length === 0 ||
             !def.allowedPackages.every((p: unknown) => typeof p === 'string')
         ) {
             return err({
                 type: 'config-validation-error',
-                message: `Layer "${name}" allowedPackages must be a non-empty array of strings`,
+                message: `Layer "${name}" allowedPackages must be an array of strings`,
             });
         }
     }

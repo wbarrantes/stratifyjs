@@ -1,12 +1,15 @@
 import { resolve } from 'path';
 import { loadAllowedPackages } from '../adapters/allowlist-file-loader.js';
 import { loadConfigFromFile } from '../adapters/config-file-loader.js';
+import { loadDependencyExceptions } from '../adapters/dependency-exceptions-file-loader.js';
 import { discoverPackages } from '../adapters/file-system-discovery.js';
 import { applyDefaults } from '../core/config-defaults.js';
+import { validateConfigSchema } from '../core/config-schema.js';
 import { DEFAULT_CONFIG_FILENAME } from '../core/constants.js';
 import { StratifyError } from '../core/errors.js';
-import { validatePackages } from '../core/validation.js';
+import { validatePackagesWithExceptions } from '../core/validation.js';
 import type {
+    AcceptedDependencyException,
     StratifyConfig,
     StratifyResolvedConfig,
     Violation,
@@ -32,6 +35,7 @@ export interface ValidateLayersOptions {
  */
 export interface ValidateLayersResult {
     violations: Violation[];
+    acceptedExceptions: AcceptedDependencyException[];
     totalPackages: number;
     duration: number;
 }
@@ -40,7 +44,7 @@ export interface ValidateLayersResult {
  * Validate monorepo packages against architectural layer rules.
  *
  * @param options - Configuration and workspace options.
- * @returns Violations found, total package count, and duration.
+ * @returns Violations, accepted exception usage, total package count, and duration.
  * @throws {StratifyError} On config loading/parsing or package discovery failures.
  *
  * @example
@@ -69,7 +73,11 @@ export async function validateLayers(
     // Resolve config
     let config: StratifyResolvedConfig;
     if (options.config) {
-        config = applyDefaults(options.config);
+        const configResult = validateConfigSchema(options.config);
+        if (!configResult.success) {
+            throw new StratifyError(configResult.error);
+        }
+        config = applyDefaults(configResult.value);
     } else {
         const configPath = options.configPath ?? DEFAULT_CONFIG_FILENAME;
         const configResult = await loadConfigFromFile(workspaceRoot, configPath);
@@ -78,6 +86,8 @@ export async function validateLayers(
         }
         config = configResult.value;
     }
+
+    config = await resolveDependencyExceptions(config, workspaceRoot);
 
     // Apply mode override
     if (options.mode) {
@@ -88,9 +98,9 @@ export async function validateLayers(
     }
 
     // Short-circuit when enforcement is off — skip all discovery and validation
-    if (config.enforcement.mode === 'off') {
+    if (config.enforcement.mode === 'off' && config.dependencyExceptions.length === 0) {
         const duration = performance.now() - startTime;
-        return { violations: [], totalPackages: 0, duration };
+        return { violations: [], acceptedExceptions: [], totalPackages: 0, duration };
     }
 
     // Discover packages
@@ -105,11 +115,46 @@ export async function validateLayers(
     const allowedPackagesByLayer = await resolveAllowedPackages(config, workspaceRoot);
 
     // Validate packages against config
-    const violations = validatePackages(packages, config, allowedPackagesByLayer);
+    const validation = validatePackagesWithExceptions(packages, config, allowedPackagesByLayer);
+    if (validation.exceptionErrors.length > 0) {
+        throw new StratifyError({
+            type: 'config-validation-error',
+            message: 'Invalid dependency exceptions',
+            details: validation.exceptionErrors,
+        });
+    }
 
     const duration = performance.now() - startTime;
 
-    return { violations, totalPackages: packages.length, duration };
+    return {
+        violations: config.enforcement.mode === 'off' ? [] : validation.violations,
+        acceptedExceptions: validation.acceptedExceptions,
+        totalPackages: packages.length,
+        duration,
+    };
+}
+
+async function resolveDependencyExceptions(
+    config: StratifyResolvedConfig,
+    workspaceRoot: string
+): Promise<StratifyResolvedConfig> {
+    if (config.dependencyExceptionsFile === undefined) {
+        return config;
+    }
+
+    const result = await loadDependencyExceptions(
+        workspaceRoot,
+        config.dependencyExceptionsFile,
+        config.layers
+    );
+    if (!result.success) {
+        throw new StratifyError(result.error);
+    }
+
+    return {
+        ...config,
+        dependencyExceptions: result.value,
+    };
 }
 
 /**
@@ -131,7 +176,7 @@ async function resolveAllowedPackages(
     const fileLoads: { layerName: string; filePath: string }[] = [];
 
     for (const [layerName, layerDef] of Object.entries(config.layers)) {
-        if (layerDef.allowedPackages) {
+        if (layerDef.allowedPackages !== undefined) {
             map.set(layerName, new Set(layerDef.allowedPackages));
         } else if (layerDef.allowedPackagesFile) {
             fileLoads.push({ layerName, filePath: layerDef.allowedPackagesFile });

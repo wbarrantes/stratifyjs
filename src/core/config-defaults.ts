@@ -37,5 +37,7 @@ export function applyDefaults(config: StratifyConfig): StratifyResolvedConfig {
             ...DEFAULT_WORKSPACES,
             ...config.workspaces,
         },
+        dependencyExceptions: config.dependencyExceptions ?? [],
+        dependencyExceptionsFile: config.dependencyExceptionsFile,
     };
 }

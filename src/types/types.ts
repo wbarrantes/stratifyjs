@@ -1,13 +1,26 @@
 /**
  * Stratify configuration as written by the user.
- * Only `layers` is required — `workspaces` and `enforcement` are optional.
+ * Only `layers` is required — all other top-level fields are optional.
  * When omitted (or partially provided), defaults are applied internally.
  */
-export interface StratifyConfig {
+interface StratifyConfigBase {
     layers: LayerMap;
     workspaces?: Partial<WorkspaceConfig>;
     enforcement?: Partial<EnforcementConfig>;
 }
+
+/** Stratify configuration with mutually exclusive inline or file-backed exceptions. */
+export type StratifyConfig = StratifyConfigBase &
+    (
+        | {
+              dependencyExceptions?: DependencyException[];
+              dependencyExceptionsFile?: never;
+          }
+        | {
+              dependencyExceptions?: never;
+              dependencyExceptionsFile: string;
+          }
+    );
 
 /**
  * Fully resolved stratify configuration with all defaults applied.
@@ -17,6 +30,60 @@ export interface StratifyResolvedConfig {
     layers: LayerMap;
     workspaces: WorkspaceConfig;
     enforcement: EnforcementConfig;
+    dependencyExceptions: DependencyException[];
+    dependencyExceptionsFile?: string;
+}
+
+interface DependencyExceptionBase {
+    /** Exact target package for the acknowledged dependency. */
+    toPackage: string;
+    /** Team or person accountable for removing or reviewing the exception. */
+    owner: string;
+    /** Architectural reason the exception is currently required. */
+    reason: string;
+}
+
+/** A narrow exception for one exact package-to-package dependency. */
+export interface PackageDependencyException extends DependencyExceptionBase {
+    fromPackage: string;
+    fromLayer?: never;
+}
+
+/** An exception for packages in one layer consuming one designated target package. */
+export interface LayerDependencyException extends DependencyExceptionBase {
+    fromLayer: string;
+    fromPackage?: never;
+}
+
+/** A dependency exception as configured by a user. */
+export type DependencyException = PackageDependencyException | LayerDependencyException;
+
+export interface ResolvedPackageDependencyException extends PackageDependencyException {
+    scope: 'package';
+    configurationIndex: number;
+}
+
+export interface ResolvedLayerDependencyException extends LayerDependencyException {
+    scope: 'layer';
+    configurationIndex: number;
+}
+
+/** A configured dependency exception with an explicit scope and stable config index. */
+export type ResolvedDependencyException =
+    ResolvedPackageDependencyException | ResolvedLayerDependencyException;
+
+/** One real dependency edge accepted by a configured exception. */
+export interface AcceptedDependencyEdge {
+    fromPackage: string;
+    fromLayer: string;
+    toPackage: string;
+    toLayer: string;
+}
+
+/** Observable usage of one configured dependency exception. */
+export interface AcceptedDependencyException {
+    exception: ResolvedDependencyException;
+    acceptedEdges: AcceptedDependencyEdge[];
 }
 
 /**
@@ -118,10 +185,7 @@ export interface Violation {
  * Violation types
  */
 export type ViolationType =
-    | 'missing-layer'
-    | 'unknown-layer'
-    | 'invalid-dependency'
-    | 'unauthorized-layer-member';
+    'missing-layer' | 'unknown-layer' | 'invalid-dependency' | 'unauthorized-layer-member';
 
 /**
  * Represents a discovered package in the monorepo
@@ -129,7 +193,10 @@ export type ViolationType =
 export interface Package {
     name: string;
     layer?: string;
+    /** Internal dependencies selected for layer validation. */
     dependencies: string[];
+    /** Internal production dependencies eligible for dependency exceptions. */
+    runtimeDependencies?: string[];
     path: string;
 }
 

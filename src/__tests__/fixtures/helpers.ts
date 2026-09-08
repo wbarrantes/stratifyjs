@@ -31,6 +31,7 @@ export function createTestConfig(
             ignore: ['**/node_modules/**', '**/lib/**', '**/dist/**'],
             dependencyTypes: ['dependencies'],
         },
+        dependencyExceptions: [],
         ...overrides,
     };
 }
@@ -43,12 +44,16 @@ export function createTestConfig(
  *   const pkg = createTestPackage({ name: '@my/ui', layer: 'ui' }); // override name and layer
  */
 export function createTestPackage(overrides?: Partial<Package>): Package {
-    return {
+    const pkg = {
         name: 'test-pkg',
         layer: 'core',
         dependencies: [],
         path: 'packages/test-pkg',
         ...overrides,
+    };
+    return {
+        ...pkg,
+        runtimeDependencies: overrides?.runtimeDependencies ?? pkg.dependencies,
     };
 }
 

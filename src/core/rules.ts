@@ -19,7 +19,7 @@ export function hasRequiredLayer(pkg: Package): boolean {
  * @returns True if the layer is known, false otherwise.
  */
 export function isKnownLayer(layerName: string, layers: LayerMap): boolean {
-    return layerName in layers;
+    return Object.hasOwn(layers, layerName);
 }
 
 /**

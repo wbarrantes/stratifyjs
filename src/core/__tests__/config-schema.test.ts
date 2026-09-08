@@ -384,14 +384,14 @@ describe('allowedPackages and allowedPackagesFile validation', () => {
         expect(result.success).toBe(false);
     });
 
-    it('should reject allowedPackages that is an empty array', () => {
+    it('should accept allowedPackages that is an empty array', () => {
         const config = {
             layers: {
                 entry: { allowedDependencies: [], allowedPackages: [] },
             },
         };
         const result = validateConfigSchema(config);
-        expect(result.success).toBe(false);
+        expect(result.success).toBe(true);
     });
 
     it('should reject allowedPackages with non-string elements', () => {
@@ -422,5 +422,248 @@ describe('allowedPackages and allowedPackagesFile validation', () => {
         };
         const result = validateConfigSchema(config);
         expect(result.success).toBe(false);
+    });
+});
+
+describe('dependencyExceptions validation', () => {
+    const layers = {
+        ui: { allowedDependencies: ['core'] },
+        core: { allowedDependencies: [] },
+    };
+
+    it('accepts exact package and layer-to-package exceptions', () => {
+        const dependencyExceptions = [
+            {
+                fromPackage: '@app/shell',
+                toPackage: '@app/core',
+                owner: 'platform',
+                reason: 'Temporary package migration',
+            },
+            {
+                fromLayer: 'ui',
+                toPackage: '@app/capability',
+                owner: 'architecture',
+                reason: 'Designated capability',
+            },
+        ];
+
+        const result = validateConfigSchema({ layers, dependencyExceptions });
+
+        expect(result.success).toBe(true);
+        if (result.success) {
+            expect(result.value.dependencyExceptions).toEqual(dependencyExceptions);
+        }
+    });
+
+    it('accepts an empty dependencyExceptions array', () => {
+        expect(validateConfigSchema({ layers, dependencyExceptions: [] }).success).toBe(true);
+    });
+
+    it('accepts dependencyExceptionsFile as a non-empty string', () => {
+        const result = validateConfigSchema({
+            layers,
+            dependencyExceptionsFile: 'config/dependency-exceptions.json',
+        });
+
+        expect(result.success).toBe(true);
+        if (result.success) {
+            expect(result.value.dependencyExceptions).toBeUndefined();
+            expect(result.value.dependencyExceptionsFile).toBe('config/dependency-exceptions.json');
+        }
+    });
+
+    it('rejects dependencyExceptions and dependencyExceptionsFile together', () => {
+        const result = validateConfigSchema({
+            layers,
+            dependencyExceptions: [],
+            dependencyExceptionsFile: 'dependency-exceptions.json',
+        });
+
+        expect(result.success).toBe(false);
+        if (!result.success) {
+            expect(result.error.message).toContain('use one or the other');
+        }
+    });
+
+    it.each([[''], ['   '], [123]])(
+        'rejects invalid dependencyExceptionsFile value %p',
+        dependencyExceptionsFile => {
+            const result = validateConfigSchema({ layers, dependencyExceptionsFile });
+
+            expect(result.success).toBe(false);
+            if (!result.success) {
+                expect(result.error.message).toContain('must be a non-empty string');
+            }
+        }
+    );
+
+    it.each([
+        ['non-array', {}, '"dependencyExceptions" must be an array'],
+        ['non-object entry', [null], 'must be an object'],
+        [
+            'both source selectors',
+            [
+                {
+                    fromPackage: '@app/shell',
+                    fromLayer: 'ui',
+                    toPackage: '@app/core',
+                    owner: 'platform',
+                    reason: 'Migration',
+                },
+            ],
+            'exactly one',
+        ],
+        [
+            'neither source selector',
+            [{ toPackage: '@app/core', owner: 'platform', reason: 'Migration' }],
+            'exactly one',
+        ],
+        [
+            'empty owner',
+            [
+                {
+                    fromPackage: '@app/shell',
+                    toPackage: '@app/core',
+                    owner: '',
+                    reason: 'Migration',
+                },
+            ],
+            '"owner" must be a non-empty string',
+        ],
+        [
+            'empty reason',
+            [
+                {
+                    fromPackage: '@app/shell',
+                    toPackage: '@app/core',
+                    owner: 'platform',
+                    reason: ' ',
+                },
+            ],
+            '"reason" must be a non-empty string',
+        ],
+        [
+            'unknown source layer',
+            [
+                {
+                    fromLayer: 'missing',
+                    toPackage: '@app/core',
+                    owner: 'platform',
+                    reason: 'Migration',
+                },
+            ],
+            'unknown source layer',
+        ],
+        [
+            'unsupported broad target layer',
+            [
+                {
+                    fromLayer: 'ui',
+                    toLayer: 'core',
+                    owner: 'platform',
+                    reason: 'Migration',
+                },
+            ],
+            'unsupported field',
+        ],
+    ])('rejects %s', (_name, dependencyExceptions, expectedMessage) => {
+        const result = validateConfigSchema({ layers, dependencyExceptions });
+
+        expect(result.success).toBe(false);
+        if (!result.success) {
+            const details =
+                result.error.type === 'config-validation-error' ? result.error.details : undefined;
+            expect(result.error.message + details?.join(' ')).toContain(expectedMessage);
+        }
+    });
+
+    it('rejects duplicate exception scopes even when metadata differs', () => {
+        const result = validateConfigSchema({
+            layers,
+            dependencyExceptions: [
+                {
+                    fromPackage: '@app/shell',
+                    toPackage: '@app/core',
+                    owner: 'platform',
+                    reason: 'First reason',
+                },
+                {
+                    fromPackage: '@app/shell',
+                    toPackage: '@app/core',
+                    owner: 'other-team',
+                    reason: 'Second reason',
+                },
+            ],
+        });
+
+        expect(result.success).toBe(false);
+        if (!result.success && result.error.type === 'config-validation-error') {
+            expect(result.error.details).toEqual([
+                'Dependency exception #2 (package "@app/shell" -> package "@app/core") (dependencyExceptions[1]) duplicates Dependency exception #1 (package "@app/shell" -> package "@app/core") (dependencyExceptions[0])',
+            ]);
+        }
+    });
+
+    it('identifies the edge and one-based entry number for invalid metadata', () => {
+        const result = validateConfigSchema({
+            layers,
+            dependencyExceptions: [
+                {
+                    fromPackage: '@app/shell',
+                    toPackage: '@app/core',
+                    owner: '',
+                    reason: 'Migration',
+                },
+            ],
+        });
+
+        expect(result.success).toBe(false);
+        if (!result.success && result.error.type === 'config-validation-error') {
+            expect(result.error.details).toEqual([
+                'Dependency exception #1 (package "@app/shell" -> package "@app/core") (dependencyExceptions[0]): "owner" must be a non-empty string',
+            ]);
+        }
+    });
+
+    it('identifies the edge and one-based entry number for unknown layers', () => {
+        const result = validateConfigSchema({
+            layers,
+            dependencyExceptions: [
+                {
+                    fromLayer: 'widget',
+                    toPackage: '@app/core',
+                    owner: 'platform',
+                    reason: 'Migration',
+                },
+            ],
+        });
+
+        expect(result.success).toBe(false);
+        if (!result.success && result.error.type === 'config-validation-error') {
+            expect(result.error.details).toEqual([
+                'Dependency exception #1 (layer "widget" -> package "@app/core") (dependencyExceptions[0]) references unknown source layer "widget"',
+            ]);
+        }
+    });
+
+    it('does not treat inherited object properties as known source layers', () => {
+        const result = validateConfigSchema({
+            layers,
+            dependencyExceptions: [
+                {
+                    fromLayer: 'toString',
+                    toPackage: '@app/core',
+                    owner: 'platform',
+                    reason: 'Invalid inherited layer',
+                },
+            ],
+        });
+
+        expect(result.success).toBe(false);
+        if (!result.success && result.error.type === 'config-validation-error') {
+            expect(result.error.details).toEqual(
+                expect.arrayContaining([expect.stringContaining('unknown source layer')])
+            );
+        }
     });
 });

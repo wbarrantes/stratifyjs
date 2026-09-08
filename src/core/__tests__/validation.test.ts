@@ -1,4 +1,4 @@
-import { validatePackages } from '../validation.js';
+import { validatePackages, validatePackagesWithExceptions } from '../validation.js';
 import { createTestConfig, createTestPackage } from '../../__tests__/fixtures/helpers.js';
 import type { Package, StratifyResolvedConfig } from '../../types/types.js';
 
@@ -221,5 +221,322 @@ describe('validatePackages', () => {
         // Should get unauthorized-layer-member only, NOT invalid-dependency
         expect(violations).toHaveLength(1);
         expect(violations[0].type).toBe('unauthorized-layer-member');
+    });
+
+    it('preserves an empty membership Set as a restrict-all allowlist', () => {
+        const restrictedConfig = createTestConfig({
+            layers: { legacy: { allowedDependencies: ['*'], allowedPackages: [] } },
+        });
+        const packages = [createTestPackage({ name: '@app/old', layer: 'legacy' })];
+
+        const violations = validatePackages(
+            packages,
+            restrictedConfig,
+            new Map([['legacy', new Set()]])
+        );
+
+        expect(violations).toHaveLength(1);
+        expect(violations[0].type).toBe('unauthorized-layer-member');
+    });
+});
+
+describe('dependency exceptions', () => {
+    const packages: Package[] = [
+        createTestPackage({
+            name: '@app/shell',
+            layer: 'ui',
+            dependencies: ['@app/infra'],
+        }),
+        createTestPackage({
+            name: '@app/admin',
+            layer: 'ui',
+            dependencies: ['@app/infra'],
+        }),
+        createTestPackage({ name: '@app/infra', layer: 'infra' }),
+    ];
+
+    it('accepts and reports an exact package edge', () => {
+        const config = createTestConfig({
+            dependencyExceptions: [
+                {
+                    fromPackage: '@app/shell',
+                    toPackage: '@app/infra',
+                    owner: 'platform',
+                    reason: 'Temporary migration bridge',
+                },
+            ],
+        });
+
+        const result = validatePackagesWithExceptions(packages, config);
+
+        expect(result.exceptionErrors).toEqual([]);
+        expect(result.violations).toHaveLength(1);
+        expect(result.violations[0].package).toBe('@app/admin');
+        expect(result.acceptedExceptions).toEqual([
+            {
+                exception: {
+                    scope: 'package',
+                    configurationIndex: 0,
+                    fromPackage: '@app/shell',
+                    toPackage: '@app/infra',
+                    owner: 'platform',
+                    reason: 'Temporary migration bridge',
+                },
+                acceptedEdges: [
+                    {
+                        fromPackage: '@app/shell',
+                        fromLayer: 'ui',
+                        toPackage: '@app/infra',
+                        toLayer: 'infra',
+                    },
+                ],
+            },
+        ]);
+    });
+
+    it('accepts every real violating edge covered by a layer-to-package exception', () => {
+        const config = createTestConfig({
+            dependencyExceptions: [
+                {
+                    fromLayer: 'ui',
+                    toPackage: '@app/infra',
+                    owner: 'platform',
+                    reason: 'Designated infrastructure capability',
+                },
+            ],
+        });
+
+        const result = validatePackagesWithExceptions(packages, config);
+
+        expect(result.exceptionErrors).toEqual([]);
+        expect(result.violations).toEqual([]);
+        expect(result.acceptedExceptions[0].acceptedEdges.map(edge => edge.fromPackage)).toEqual([
+            '@app/shell',
+            '@app/admin',
+        ]);
+    });
+
+    it('rejects ambiguous coverage instead of giving package scope precedence', () => {
+        const config = createTestConfig({
+            dependencyExceptions: [
+                {
+                    fromPackage: '@app/shell',
+                    toPackage: '@app/infra',
+                    owner: 'platform',
+                    reason: 'Exact exception',
+                },
+                {
+                    fromLayer: 'ui',
+                    toPackage: '@app/infra',
+                    owner: 'architecture',
+                    reason: 'Capability exception',
+                },
+            ],
+        });
+
+        const result = validatePackagesWithExceptions(packages, config);
+
+        expect(result.exceptionErrors).toEqual([expect.stringContaining('ambiguously covered')]);
+        expect(result.violations.map(violation => violation.package)).toEqual(['@app/shell']);
+    });
+
+    it('reports ambiguous exception indexes in configuration order', () => {
+        const config = createTestConfig({
+            dependencyExceptions: [
+                {
+                    fromLayer: 'ui',
+                    toPackage: '@app/infra',
+                    owner: 'architecture',
+                    reason: 'Capability exception',
+                },
+                {
+                    fromPackage: '@app/shell',
+                    toPackage: '@app/infra',
+                    owner: 'platform',
+                    reason: 'Exact exception',
+                },
+            ],
+        });
+
+        const result = validatePackagesWithExceptions(packages, config);
+
+        expect(result.exceptionErrors[0]).toContain(
+            'Dependency exception #1 (layer "ui" -> package "@app/infra") (dependencyExceptions[0])'
+        );
+        expect(result.exceptionErrors[0]).toContain(
+            'Dependency exception #2 (package "@app/shell" -> package "@app/infra") (dependencyExceptions[1])'
+        );
+    });
+
+    it('rejects stale exceptions with no matching runtime dependency', () => {
+        const config = createTestConfig({
+            dependencyExceptions: [
+                {
+                    fromPackage: '@app/infra',
+                    toPackage: '@app/shell',
+                    owner: 'platform',
+                    reason: 'No longer needed',
+                },
+            ],
+        });
+
+        const result = validatePackagesWithExceptions(packages, config);
+
+        expect(result.exceptionErrors).toEqual([expect.stringContaining('is stale')]);
+    });
+
+    it('identifies file-backed exceptions in semantic errors', () => {
+        const config = createTestConfig({
+            dependencyExceptionsFile: 'dependency-exceptions.json',
+            dependencyExceptions: [
+                {
+                    fromPackage: '@app/infra',
+                    toPackage: '@app/shell',
+                    owner: 'platform',
+                    reason: 'No longer needed',
+                },
+            ],
+        });
+
+        const result = validatePackagesWithExceptions(packages, config);
+
+        expect(result.exceptionErrors).toEqual([
+            'Dependency exception #1 (package "@app/infra" -> package "@app/shell") in dependency-exceptions file "dependency-exceptions.json" (array index 0) is stale because no matching runtime dependency exists',
+        ]);
+    });
+
+    it('rejects unnecessary exceptions for already allowed edges', () => {
+        const allowedPackages = [
+            createTestPackage({
+                name: '@app/shell',
+                layer: 'ui',
+                dependencies: ['@app/core'],
+            }),
+            createTestPackage({ name: '@app/core', layer: 'core' }),
+        ];
+        const config = createTestConfig({
+            dependencyExceptions: [
+                {
+                    fromPackage: '@app/shell',
+                    toPackage: '@app/core',
+                    owner: 'platform',
+                    reason: 'Not actually needed',
+                },
+            ],
+        });
+
+        const result = validatePackagesWithExceptions(allowedPackages, config);
+
+        expect(result.exceptionErrors).toEqual([expect.stringContaining('is unnecessary')]);
+        expect(result.acceptedExceptions).toEqual([]);
+    });
+
+    it('rejects unknown source and target packages', () => {
+        const config = createTestConfig({
+            dependencyExceptions: [
+                {
+                    fromPackage: '@app/missing-source',
+                    toPackage: '@app/missing-target',
+                    owner: 'platform',
+                    reason: 'Invalid references',
+                },
+            ],
+        });
+
+        const result = validatePackagesWithExceptions(packages, config);
+
+        expect(result.exceptionErrors).toEqual(
+            expect.arrayContaining([
+                expect.stringContaining('unknown source package'),
+                expect.stringContaining('unknown target package'),
+            ])
+        );
+    });
+
+    it('rejects otherwise unused exceptions', () => {
+        const config = createTestConfig({
+            layers: {
+                ui: { allowedDependencies: ['core'], allowedPackages: [] },
+                core: { allowedDependencies: ['infra'] },
+                infra: { allowedDependencies: [] },
+            },
+            dependencyExceptions: [
+                {
+                    fromPackage: '@app/shell',
+                    toPackage: '@app/infra',
+                    owner: 'platform',
+                    reason: 'Blocked before dependency validation',
+                },
+            ],
+        });
+
+        const result = validatePackagesWithExceptions(
+            packages,
+            config,
+            new Map([['ui', new Set()]])
+        );
+
+        expect(result.exceptionErrors).toEqual([expect.stringContaining('is unused')]);
+        expect(result.violations.every(v => v.type === 'unauthorized-layer-member')).toBe(true);
+    });
+
+    it('does not allow an exception to cover a non-runtime dependency', () => {
+        const devOnlyPackages = [
+            createTestPackage({
+                name: '@app/shell',
+                layer: 'ui',
+                dependencies: ['@app/infra'],
+                runtimeDependencies: [],
+            }),
+            createTestPackage({ name: '@app/infra', layer: 'infra' }),
+        ];
+        const config = createTestConfig({
+            dependencyExceptions: [
+                {
+                    fromPackage: '@app/shell',
+                    toPackage: '@app/infra',
+                    owner: 'platform',
+                    reason: 'Dev-only dependencies cannot be excepted',
+                },
+            ],
+        });
+
+        const result = validatePackagesWithExceptions(devOnlyPackages, config);
+
+        expect(result.exceptionErrors).toEqual([expect.stringContaining('is stale')]);
+        expect(result.violations).toHaveLength(1);
+        expect(result.acceptedExceptions).toEqual([]);
+    });
+
+    it('treats runtime dependencies excluded from validation as stale', () => {
+        const selectedDevOnlyPackages = [
+            createTestPackage({
+                name: '@app/shell',
+                layer: 'ui',
+                dependencies: [],
+                runtimeDependencies: ['@app/infra'],
+            }),
+            createTestPackage({ name: '@app/infra', layer: 'infra' }),
+        ];
+        const config = createTestConfig({
+            workspaces: {
+                patterns: [],
+                protocols: ['workspace:'],
+                ignore: [],
+                dependencyTypes: ['devDependencies'],
+            },
+            dependencyExceptions: [
+                {
+                    fromPackage: '@app/shell',
+                    toPackage: '@app/infra',
+                    owner: 'platform',
+                    reason: 'Runtime validation is disabled',
+                },
+            ],
+        });
+
+        const result = validatePackagesWithExceptions(selectedDevOnlyPackages, config);
+
+        expect(result.exceptionErrors).toEqual([expect.stringContaining('is stale')]);
     });
 });
