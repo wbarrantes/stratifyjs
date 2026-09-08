@@ -1,0 +1,7 @@
+{
+  "type": "none",
+  "comment": "Apply the Beachball-generated 4.0.0 release metadata after #13",
+  "packageName": "stratifyjs",
+  "email": "walterb@microsoft.com",
+  "dependentChangeType": "none"
+}
